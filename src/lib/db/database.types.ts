@@ -145,6 +145,25 @@ export type Database = {
         };
         Returns: undefined;
       };
+      join_organization_by_invite: {
+        Args: {
+          invite_code_input: string;
+          employee_full_name: string;
+          employee_phone?: string | null;
+        };
+        Returns: {
+          organization_id: string;
+          profile_id: string;
+          role: Database["public"]["Enums"]["user_role"];
+        }[];
+      };
+      regenerate_organization_invite_code: {
+        Args: { target_organization_id: string };
+        Returns: {
+          invite_code: string;
+          invite_code_updated_at: string;
+        }[];
+      };
     };
     Enums: {
       follow_up_status: "open" | "completed" | "snoozed" | "cancelled";
@@ -198,6 +217,8 @@ type AuditInsert = {
 type OrganizationRow = AuditColumns & {
   branding: Json;
   id: string;
+  invite_code: string;
+  invite_code_updated_at: string | null;
   name: string;
   settings: Json;
   slug: string;
@@ -206,6 +227,8 @@ type OrganizationRow = AuditColumns & {
 type OrganizationInsert = AuditInsert & {
   branding?: Json;
   id?: string;
+  invite_code?: string;
+  invite_code_updated_at?: string | null;
   name: string;
   settings?: Json;
   slug: string;

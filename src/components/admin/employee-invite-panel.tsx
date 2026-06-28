@@ -1,10 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Copy, RefreshCw } from "lucide-react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { formatSupabaseError } from "@/lib/supabase/errors";
 import type { AuthProfileState, ProfileRow } from "@/lib/map/types";
-import type { Database } from "@/lib/db/database.types";
+
+type InviteCodeResult = {
+  invite_code: string;
+  invite_code_updated_at: string | null;
+};
 
 export function EmployeeInvitePanel({
   auth,
@@ -13,129 +19,148 @@ export function EmployeeInvitePanel({
   auth: AuthProfileState;
   profiles: ProfileRow[];
 }) {
-  const [email, setEmail] = useState("");
-  const [authUserId, setAuthUserId] = useState("");
-  const [role, setRole] =
-    useState<Database["public"]["Enums"]["user_role"]>("employee");
-  const [message, setMessage] = useState<string | null>(null);
-  const [pending, setPending] = useState<Array<{ email: string; role: string }>>(
-    [],
+  const [inviteCode, setInviteCode] = useState(auth.organization?.invite_code ?? "");
+  const [updatedAt, setUpdatedAt] = useState(
+    auth.organization?.invite_code_updated_at ?? null,
   );
+  const [message, setMessage] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
+  const inviteLink = useMemo(() => {
+    if (!inviteCode || typeof window === "undefined") return "";
+    return `${window.location.origin}/join/${inviteCode}`;
+  }, [inviteCode]);
 
-  async function createProfile() {
+  async function copyText(label: string, value: string) {
+    if (!value) return;
+
+    await window.navigator.clipboard.writeText(value);
+    setMessage(`${label} copied.`);
+  }
+
+  async function regenerateInviteCode() {
     const supabase = getSupabaseBrowserClient();
-    if (!supabase || !auth.organization || !auth.profile) {
+    if (!supabase || !auth.organization) {
       setMessage("Cloud Mode is not ready.");
       return;
     }
-    if (!email || !authUserId) {
-      setMessage("Enter the employee email and their Supabase Auth user ID.");
+    if (
+      !window.confirm(
+        "Regenerate the invite code? Existing invite links will stop working.",
+      )
+    ) {
       return;
     }
 
-    const profileInsert: Database["public"]["Tables"]["profiles"]["Insert"] = {
-      id: authUserId,
-      organization_id: auth.organization.id,
-      email,
-      full_name: email.split("@")[0] ?? "Employee",
-      role,
-      active: true,
-      created_by: auth.profile.id,
-      updated_by: auth.profile.id,
-    };
+    setIsPending(true);
+    const { data, error } = await supabase.rpc(
+      "regenerate_organization_invite_code" as never,
+      { target_organization_id: auth.organization.id } as never,
+    );
+    setIsPending(false);
 
-    const { error } = await supabase.from("profiles").insert(profileInsert as never);
     if (error) {
-      setMessage(error.message);
-      setPending((current) => [...current, { email, role }]);
+      setMessage(formatSupabaseError(error));
       return;
     }
 
-    setMessage("Profile created. The employee can now log in.");
-    setEmail("");
-    setAuthUserId("");
+    const result = Array.isArray(data)
+      ? (data[0] as InviteCodeResult | undefined)
+      : null;
+    if (
+      result &&
+      typeof result.invite_code === "string"
+    ) {
+      setInviteCode(result.invite_code);
+      setUpdatedAt(result.invite_code_updated_at);
+      setMessage("Invite code regenerated.");
+    } else {
+      setMessage("Invite code regenerated. Refresh this page to view it.");
+    }
   }
 
   return (
     <div className="mt-5 grid gap-4">
-      <div className="rounded-3xl bg-zinc-100 p-4">
-        <h2 className="text-base font-black">Manual invite flow</h2>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm font-semibold text-zinc-700">
-          <li>Employee creates an account on the Login page with email/password.</li>
-          <li>Owner or manager copies the employee Supabase Auth user ID.</li>
-          <li>Create the profile here with the same email, role, and organization.</li>
-          <li>Employee logs in again and Cloud Mode becomes available.</li>
-        </ol>
-      </div>
+      <section className="rounded-3xl bg-zinc-100 p-4">
+        <p className="text-xs font-bold uppercase text-zinc-500">
+          Organization
+        </p>
+        <h2 className="mt-1 text-lg font-black">
+          {auth.organization?.name ?? "Organization"}
+        </h2>
 
-      <div className="grid gap-2 rounded-3xl bg-zinc-100 p-4">
-        <label>
-          <span className="mb-1 block text-xs font-bold uppercase text-zinc-500">
-            Employee email
-          </span>
-          <input
-            className="h-12 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm font-bold outline-none focus:border-zinc-950"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </label>
-        <label>
-          <span className="mb-1 block text-xs font-bold uppercase text-zinc-500">
-            Supabase Auth user ID
-          </span>
-          <input
-            className="h-12 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm font-bold outline-none focus:border-zinc-950"
-            value={authUserId}
-            onChange={(event) => setAuthUserId(event.target.value)}
-          />
-        </label>
-        <label>
-          <span className="mb-1 block text-xs font-bold uppercase text-zinc-500">
-            Role
-          </span>
-          <select
-            className="h-12 w-full rounded-2xl border border-zinc-200 bg-white px-3 text-sm font-bold outline-none focus:border-zinc-950"
-            value={role}
-            onChange={(event) =>
-              setRole(event.target.value as Database["public"]["Enums"]["user_role"])
-            }
+        <div className="mt-4 rounded-3xl bg-white p-4">
+          <p className="text-xs font-bold uppercase text-zinc-500">
+            Invite code
+          </p>
+          <p className="mt-1 break-all text-3xl font-black tracking-[0.12em]">
+            {inviteCode || "Unavailable"}
+          </p>
+          {updatedAt ? (
+            <p className="mt-1 text-xs font-bold text-zinc-500">
+              Updated {new Date(updatedAt).toLocaleDateString()}
+            </p>
+          ) : null}
+        </div>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
+          <button
+            className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-3 text-sm font-black text-white disabled:opacity-50"
+            type="button"
+            disabled={!inviteCode}
+            onClick={() => void copyText("Invite code", inviteCode)}
           >
-            <option value="employee">Employee</option>
-            <option value="manager">Manager</option>
-            <option value="owner">Owner</option>
-          </select>
-        </label>
-        <button
-          className="mt-1 h-12 rounded-2xl bg-zinc-950 text-sm font-black text-white"
-          type="button"
-          onClick={createProfile}
-        >
-          Create Profile
-        </button>
+            <Copy size={17} />
+            Copy Code
+          </button>
+          <button
+            className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-zinc-950 px-3 text-sm font-black text-white disabled:opacity-50"
+            type="button"
+            disabled={!inviteLink}
+            onClick={() => void copyText("Invite link", inviteLink)}
+          >
+            <Copy size={17} />
+            Copy Link
+          </button>
+          <button
+            className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-white px-3 text-sm font-black text-zinc-950 ring-1 ring-zinc-200 disabled:opacity-50"
+            type="button"
+            disabled={isPending}
+            onClick={regenerateInviteCode}
+          >
+            <RefreshCw size={17} />
+            Regenerate
+          </button>
+        </div>
+
+        {inviteLink ? (
+          <p className="mt-3 break-all rounded-2xl bg-white p-3 text-sm font-bold text-zinc-700">
+            {inviteLink}
+          </p>
+        ) : null}
+
         {message ? (
-          <p className="rounded-2xl bg-white p-3 text-sm font-bold text-zinc-700">
+          <p className="mt-3 rounded-2xl bg-white p-3 text-sm font-bold text-zinc-700">
             {message}
           </p>
         ) : null}
-      </div>
+      </section>
 
       <section>
         <h2 className="mb-2 text-base font-black">Active users</h2>
         <div className="space-y-2">
           {profiles.map((profile) => (
             <div
-              className="flex items-center justify-between rounded-2xl bg-zinc-100 p-3"
+              className="flex items-center justify-between gap-3 rounded-2xl bg-zinc-100 p-3"
               key={profile.id}
             >
-              <div>
-                <p className="text-sm font-black">{profile.full_name}</p>
-                <p className="text-xs font-semibold text-zinc-600">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-black">{profile.full_name}</p>
+                <p className="truncate text-xs font-semibold text-zinc-600">
                   {profile.email}
                 </p>
               </div>
               <span className="rounded-full bg-white px-2.5 py-1 text-xs font-black">
-                {profile.active ? profile.role : "pending"}
+                {profile.active ? profile.role : "inactive"}
               </span>
             </div>
           ))}
@@ -146,20 +171,6 @@ export function EmployeeInvitePanel({
           ) : null}
         </div>
       </section>
-
-      {pending.length ? (
-        <section>
-          <h2 className="mb-2 text-base font-black">Pending manual invites</h2>
-          {pending.map((invite) => (
-            <p
-              className="mb-2 rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-950"
-              key={`${invite.email}-${invite.role}`}
-            >
-              {invite.email} · {invite.role}
-            </p>
-          ))}
-        </section>
-      ) : null}
     </div>
   );
 }

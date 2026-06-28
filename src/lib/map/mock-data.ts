@@ -5,6 +5,8 @@ const now = new Date("2026-06-27T12:00:00.000Z").toISOString();
 export const mockMapData = {
   organization: {
     id: "00000000-0000-4000-8000-000000000001",
+    invite_code: "GLASSWELL1",
+    invite_code_updated_at: now,
     name: "Glasswell Window Cleaning",
     slug: "glasswell",
     branding: { primaryColor: "#18181b", serviceArea: "Ottawa, Ontario" },
