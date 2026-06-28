@@ -29,8 +29,6 @@ import { MapEntitySheet } from "@/components/map/map-entity-sheet";
 import { MapLegend } from "@/components/map/map-legend";
 import {
   CloudModeGuard,
-  DataModeSwitch,
-  DataToolsPanel,
   MapFiltersPanel,
 } from "@/components/map/map-panels";
 import { QuickLeadSheet } from "@/components/map/quick-lead-sheet";
@@ -43,6 +41,7 @@ import {
   StartShiftPanel,
 } from "@/components/map/shift-panel";
 import { TerritorySetupSheet } from "@/components/map/territory-setup-sheet";
+import { useDataSource } from "@/hooks/use-data-source";
 import { useSearch } from "@/hooks/use-search";
 import { mapConfig } from "@/lib/config";
 import {
@@ -62,10 +61,7 @@ import {
 } from "@/lib/map/calculations";
 import { addDays, humanize, today } from "@/lib/map/formatters";
 import {
-  clearLocalSnapshot,
-  exportLocalSnapshot,
   loadLocalSnapshot,
-  parseImportedSnapshot,
   saveLocalSnapshot,
 } from "@/lib/map/local-persistence";
 import { createMapDataRepository } from "@/lib/map/repositories";
@@ -89,7 +85,6 @@ import type {
   ActivityLogRow,
   AuthProfileState,
   CustomerRow,
-  DataMode,
   FollowUpDraft,
   FollowUpRow,
   JobDraft,
@@ -97,7 +92,6 @@ import type {
   LeadDraft,
   LeadRow,
   LeadStatus,
-  LocalMapSnapshot,
   MapData,
   MapFilters,
   ProfileRow,
@@ -221,7 +215,7 @@ export function OttawaMap({ auth }: { auth: AuthProfileState }) {
   const [routeActive, setRouteActive] = useState(false);
   const [routeSheetOpen, setRouteSheetOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [dataMode, setDataMode] = useState<DataMode>("demo");
+  const { dataMode } = useDataSource(auth);
 
   useEffect(() => {
     let active = true;
@@ -619,94 +613,6 @@ export function OttawaMap({ auth }: { auth: AuthProfileState }) {
       },
       ...current,
     ]);
-  }
-
-  function currentSnapshot(): LocalMapSnapshot | null {
-    if (!mapData) return null;
-
-    return {
-      mapData,
-      streetLocks,
-      activities,
-      timelineItems,
-      shift,
-      activeStreetId,
-      streetStartedAt,
-    };
-  }
-
-  async function resetDemoData() {
-    if (
-      !window.confirm(
-        "Reset demo data? This will replace local territories, leads, shifts, and activity with the starter data.",
-      )
-    ) {
-      return;
-    }
-
-    const repository = createMapDataRepository();
-    const nextData = await repository.loadMapData();
-
-    clearLocalSnapshot();
-    setMapData(nextData);
-    setStreetLocks(createInitialLocks(nextData));
-    setActivities(createInitialActivities(nextData));
-    setTimelineItems(createInitialTimeline(nextData));
-    setShift(null);
-    setActiveStreetId(null);
-    setStreetStartedAt(null);
-    setSelectedEntity(null);
-    setToast("Demo data reset.");
-  }
-
-  function exportBackup() {
-    const snapshot = currentSnapshot();
-    if (!snapshot) return;
-
-    const backupJson = exportLocalSnapshot(snapshot);
-    const url = `data:application/json;charset=utf-8,${encodeURIComponent(
-      backupJson,
-    )}`;
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `glasswell-demo-backup-${today()}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setToast("JSON backup exported.");
-  }
-
-  async function importBackup(file: File) {
-    if (
-      !window.confirm(
-        "Import this backup over current local data? Current demo changes will be replaced.",
-      )
-    ) {
-      return;
-    }
-
-    try {
-      const snapshot = parseImportedSnapshot(await file.text());
-      setMapData(snapshot.mapData);
-      setStreetLocks(snapshot.streetLocks);
-      setActivities(snapshot.activities);
-      setTimelineItems(snapshot.timelineItems);
-      setShift(snapshot.shift);
-      setActiveStreetId(snapshot.activeStreetId);
-      setStreetStartedAt(snapshot.streetStartedAt);
-      setSelectedEntity(null);
-      setToast("JSON backup imported.");
-    } catch (importError) {
-      captureError(importError, "JSON backup import failed.", {
-        area: "map",
-        operation: "importBackup",
-      });
-      setToast(
-        importError instanceof Error
-          ? importError.message
-          : "Backup could not be imported.",
-      );
-    }
   }
 
   function startShift() {
@@ -1877,11 +1783,6 @@ export function OttawaMap({ auth }: { auth: AuthProfileState }) {
         onChange={setFilters}
         territories={mapData?.territories ?? []}
       />
-      <DataModeSwitch
-        auth={auth}
-        dataMode={dataMode}
-        onChange={setDataMode}
-      />
       {dataMode === "cloud" ? <CloudModeGuard auth={auth} /> : null}
 
       {shift && currentUser ? (
@@ -1987,12 +1888,6 @@ export function OttawaMap({ auth }: { auth: AuthProfileState }) {
           </button>
         ) : null}
       </div>
-
-      <DataToolsPanel
-        onExport={exportBackup}
-        onImport={importBackup}
-        onReset={resetDemoData}
-      />
 
       {legendOpen ? <MapLegend /> : null}
       <MapStatusOverlay

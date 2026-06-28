@@ -14,12 +14,12 @@ import {
   UserRound,
 } from "lucide-react";
 
+import { useDataSource } from "@/hooks/use-data-source";
 import { formatDuration, humanize, today } from "@/lib/map/formatters";
 import { loadLocalSnapshot } from "@/lib/map/local-persistence";
 import { createMapDataRepository } from "@/lib/map/repositories";
 import type {
   AuthProfileState,
-  DataMode,
   FollowUpRow,
   JobRow,
   KnockingSessionRow,
@@ -51,7 +51,7 @@ const currency = new Intl.NumberFormat("en-CA", {
 });
 
 export function OwnerCommandCenter({ auth }: { auth: AuthProfileState }) {
-  const [dataMode, setDataMode] = useState<DataMode>("demo");
+  const { dataMode } = useDataSource(auth);
   const [state, setState] = useState<DashboardState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -134,22 +134,6 @@ export function OwnerCommandCenter({ auth }: { auth: AuthProfileState }) {
                 Owner Command Center
               </p>
               <h1 className="text-2xl font-black">Today</h1>
-            </div>
-            <div className="grid grid-cols-2 gap-1 rounded-2xl bg-zinc-100 p-1">
-              {(["demo", "cloud"] as DataMode[]).map((mode) => (
-                <button
-                  className={`h-10 rounded-xl px-3 text-xs font-black ${
-                    dataMode === mode
-                      ? "bg-zinc-950 text-white"
-                      : "text-zinc-600"
-                  }`}
-                  key={mode}
-                  type="button"
-                  onClick={() => setDataMode(mode)}
-                >
-                  {mode === "demo" ? "Demo" : "Cloud"}
-                </button>
-              ))}
             </div>
           </div>
           {error ? (

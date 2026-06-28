@@ -3,12 +3,13 @@
 import { useState } from "react";
 
 import { APP_BUILD_LABEL, APP_VERSION } from "@/lib/app-version";
+import { useDataSource } from "@/hooks/use-data-source";
 import {
   loadLocalFeedback,
   submitFeedback,
   type FeedbackDraft,
 } from "@/lib/feedback";
-import type { AuthProfileState, DataMode } from "@/lib/map/types";
+import type { AuthProfileState } from "@/lib/map/types";
 
 const initialDraft: FeedbackDraft = {
   type: "bug",
@@ -18,7 +19,7 @@ const initialDraft: FeedbackDraft = {
 };
 
 export function FeedbackPanel({ auth }: { auth: AuthProfileState }) {
-  const [dataMode, setDataMode] = useState<DataMode>("demo");
+  const { dataMode } = useDataSource(auth);
   const [draft, setDraft] = useState<FeedbackDraft>(initialDraft);
   const [message, setMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -53,23 +54,6 @@ export function FeedbackPanel({ auth }: { auth: AuthProfileState }) {
         <p className="mt-2 text-sm font-semibold text-zinc-600">
           App version {APP_VERSION} - {APP_BUILD_LABEL}
         </p>
-
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          {(["demo", "cloud"] as DataMode[]).map((mode) => (
-            <button
-              className={`h-12 rounded-2xl text-sm font-black ${
-                dataMode === mode
-                  ? "bg-zinc-950 text-white"
-                  : "bg-zinc-100 text-zinc-700"
-              }`}
-              key={mode}
-              type="button"
-              onClick={() => setDataMode(mode)}
-            >
-              {mode === "demo" ? "Demo Mode" : "Cloud Mode"}
-            </button>
-          ))}
-        </div>
 
         {dataMode === "cloud" && !auth.isConfigured ? (
           <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-950">

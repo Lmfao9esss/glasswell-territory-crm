@@ -3,7 +3,8 @@
 import { useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { AuthProfileState } from "@/lib/map/types";
+import { formatSupabaseError } from "@/lib/supabase/errors";
+import type { AuthProfileState, LeadStatus } from "@/lib/map/types";
 import type { Database } from "@/lib/db/database.types";
 
 type TestStatus = "idle" | "pass" | "fail";
@@ -13,6 +14,20 @@ type TestResult = {
   status: TestStatus;
   detail: string;
 };
+
+type LeadInsert = Database["public"]["Tables"]["leads"]["Insert"];
+type LeadUpdate = Database["public"]["Tables"]["leads"]["Update"];
+type DebugContext = {
+  operation: string;
+  table: "leads";
+  payload: LeadInsert | LeadUpdate | null;
+  leadId?: string;
+  createdLeadStatus?: string;
+  createdLeadJobStatus?: string;
+};
+
+const CLOUD_TEST_UPDATE_LEAD_STATUS = "waiting" satisfies LeadStatus;
+const CLOUD_TEST_ARCHIVE_LEAD_STATUS = "lost" satisfies LeadStatus;
 
 const initialResults: TestResult[] = [
   { label: "Current auth user", status: "idle", detail: "Not run" },
@@ -28,6 +43,8 @@ const initialResults: TestResult[] = [
 export function CloudTestPanel({ auth }: { auth: AuthProfileState }) {
   const [results, setResults] = useState<TestResult[]>(initialResults);
   const [isRunning, setIsRunning] = useState(false);
+  const [debugPayload, setDebugPayload] = useState<string | null>(null);
+  const [debugError, setDebugError] = useState<string | null>(null);
 
   function setResult(label: string, status: TestStatus, detail: string) {
     setResults((current) =>
@@ -39,7 +56,15 @@ export function CloudTestPanel({ auth }: { auth: AuthProfileState }) {
 
   async function runTests() {
     const supabase = getSupabaseBrowserClient();
+    let debugContext: DebugContext = {
+      operation: "Not started",
+      table: "leads",
+      payload: null,
+    };
+
     setResults(initialResults);
+    setDebugPayload(null);
+    setDebugError(null);
 
     if (!supabase || !auth.profile || !auth.organization) {
       setResult(
@@ -97,7 +122,7 @@ export function CloudTestPanel({ auth }: { auth: AuthProfileState }) {
       const street = streets?.[0] as
         | Database["public"]["Tables"]["streets"]["Row"]
         | undefined;
-      const leadInsert: Database["public"]["Tables"]["leads"]["Insert"] = {
+      const leadInsert: LeadInsert = {
         organization_id: auth.organization.id,
         territory_id: territory?.id ?? null,
         street_id: street?.id ?? null,
@@ -113,6 +138,11 @@ export function CloudTestPanel({ auth }: { auth: AuthProfileState }) {
         updated_by: auth.profile.id,
       };
 
+      debugContext = {
+        operation: "Create test lead",
+        table: "leads",
+        payload: leadInsert,
+      };
       const { data: lead, error: createError } = await supabase
         .from("leads")
         .insert(leadInsert as never)
@@ -122,29 +152,73 @@ export function CloudTestPanel({ auth }: { auth: AuthProfileState }) {
       const createdLead = lead as Database["public"]["Tables"]["leads"]["Row"];
       setResult("Create test lead", "pass", createdLead.customer_name);
 
-      const { error: updateError } = await supabase
+      const leadUpdate: LeadUpdate = {
+        notes: "Updated by /admin/cloud-test.",
+        status: CLOUD_TEST_UPDATE_LEAD_STATUS,
+        updated_by: auth.profile.id,
+      };
+      debugContext = {
+        operation: "Update test lead",
+        table: "leads",
+        payload: leadUpdate,
+        leadId: createdLead.id,
+        createdLeadStatus: createdLead.status,
+        createdLeadJobStatus: createdLead.job_status,
+      };
+      await displayDevelopmentPayload("Update test lead", leadUpdate, setDebugPayload);
+      const { data: updatedLead, error: updateError } = await supabase
         .from("leads")
-        .update({
-          notes: "Updated by /admin/cloud-test.",
-          updated_by: auth.profile.id,
-        } as never)
-        .eq("id", createdLead.id);
+        .update(leadUpdate as never)
+        .eq("organization_id", auth.organization.id)
+        .eq("id", createdLead.id)
+        .select("id, notes, status")
+        .single();
       if (updateError) throw updateError;
-      setResult("Update test lead", "pass", "Updated notes.");
+      if (!updatedLead) {
+        throw new Error("Lead update returned no row. Check lead update RLS.");
+      }
+      setResult("Update test lead", "pass", "Updated status to waiting.");
 
-      const { error: archiveError } = await supabase
+      const leadArchive: LeadUpdate = {
+        status: CLOUD_TEST_ARCHIVE_LEAD_STATUS,
+        job_status: "lost",
+        notes: "Archived by /admin/cloud-test.",
+        updated_by: auth.profile.id,
+      };
+      debugContext = {
+        operation: "Archive test lead",
+        table: "leads",
+        payload: leadArchive,
+        leadId: createdLead.id,
+        createdLeadStatus: createdLead.status,
+        createdLeadJobStatus: createdLead.job_status,
+      };
+      await displayDevelopmentPayload("Archive test lead", leadArchive, setDebugPayload);
+      const { data: archivedLead, error: archiveError } = await supabase
         .from("leads")
-        .update({
-          status: "lost",
-          job_status: "lost",
-          notes: "Archived by /admin/cloud-test.",
-          updated_by: auth.profile.id,
-        } as never)
-        .eq("id", createdLead.id);
+        .update(leadArchive as never)
+        .eq("organization_id", auth.organization.id)
+        .eq("id", createdLead.id)
+        .select("id, status, job_status")
+        .single();
       if (archiveError) throw archiveError;
+      if (!archivedLead) {
+        throw new Error("Lead archive returned no row. Check lead update RLS.");
+      }
       setResult("Archive test lead", "pass", "Marked lost instead of deleting.");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unknown failure.";
+      const message = formatSupabaseError(error);
+      setDebugError(
+        JSON.stringify(
+          {
+            context: debugContext,
+            formatted: message,
+            raw: serializeError(error),
+          },
+          null,
+          2,
+        ),
+      );
       setResults((current) => {
         const firstIdle = current.find((result) => result.status === "idle");
         if (!firstIdle) return current;
@@ -169,6 +243,22 @@ export function CloudTestPanel({ auth }: { auth: AuthProfileState }) {
       >
         {isRunning ? "Running" : "Run Cloud Test"}
       </button>
+      {process.env.NODE_ENV !== "production" && debugPayload ? (
+        <div className="mt-4 rounded-2xl bg-zinc-950 p-3 text-xs font-semibold text-white">
+          <p className="font-black">Development payload preview</p>
+          <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">
+            {debugPayload}
+          </pre>
+        </div>
+      ) : null}
+      {process.env.NODE_ENV !== "production" && debugError ? (
+        <div className="mt-4 rounded-2xl bg-red-950 p-3 text-xs font-semibold text-white">
+          <p className="font-black">Development error detail</p>
+          <pre className="mt-2 overflow-x-auto whitespace-pre-wrap">
+            {debugError}
+          </pre>
+        </div>
+      ) : null}
       <div className="mt-4 space-y-2">
         {results.map((result) => (
           <div
@@ -195,4 +285,33 @@ export function CloudTestPanel({ auth }: { auth: AuthProfileState }) {
       </div>
     </div>
   );
+}
+
+function serializeError(error: unknown) {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+
+  if (typeof error === "object" && error !== null) {
+    return error;
+  }
+
+  return { value: error };
+}
+
+async function displayDevelopmentPayload(
+  label: string,
+  payload: LeadUpdate,
+  setDebugPayload: (payload: string) => void,
+) {
+  if (process.env.NODE_ENV === "production") return;
+
+  setDebugPayload(`${label}\n${JSON.stringify(payload, null, 2)}`);
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
 }

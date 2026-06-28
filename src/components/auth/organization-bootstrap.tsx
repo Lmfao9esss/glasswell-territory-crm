@@ -4,7 +4,6 @@ import { useState } from "react";
 
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { AuthProfileState } from "@/lib/map/types";
-import type { Database } from "@/lib/db/database.types";
 
 export function OrganizationBootstrap({ auth }: { auth: AuthProfileState }) {
   const [name, setName] = useState("Glasswell Window Cleaning");
@@ -23,41 +22,19 @@ export function OrganizationBootstrap({ auth }: { auth: AuthProfileState }) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/(^-|-$)/g, "");
-    const organizationInsert: Database["public"]["Tables"]["organizations"]["Insert"] = {
-      name,
-      slug: slug || `organization-${auth.userId.slice(0, 8)}`,
-      branding: {},
-      settings: {},
-    };
-    const { data: organization, error: organizationError } = await supabase
-      .from("organizations")
-      .insert(organizationInsert as never)
-      .select("*")
-      .single();
-
-    if (organizationError || !organization) {
-      setIsPending(false);
-      setMessage(organizationError?.message ?? "Organization could not be created.");
-      return;
-    }
-    const createdOrganization =
-      organization as Database["public"]["Tables"]["organizations"]["Row"];
-
-    const profileInsert: Database["public"]["Tables"]["profiles"]["Insert"] = {
-      id: auth.userId,
-      organization_id: createdOrganization.id,
-      email: auth.email,
-      full_name: auth.email.split("@")[0] ?? "Owner",
-      role: "owner",
-      active: true,
-    };
-    const { error: profileError } = await supabase
-      .from("profiles")
-      .insert(profileInsert as never);
+    const { error } = await supabase.rpc(
+      "bootstrap_first_organization" as never,
+      {
+        organization_name: name,
+        organization_slug: slug || `organization-${auth.userId.slice(0, 8)}`,
+        owner_email: auth.email,
+        owner_full_name: auth.email.split("@")[0] || "Owner",
+      } as never,
+    );
 
     setIsPending(false);
-    if (profileError) {
-      setMessage(profileError.message);
+    if (error) {
+      setMessage(error.message);
       return;
     }
 

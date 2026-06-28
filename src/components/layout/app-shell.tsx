@@ -11,7 +11,7 @@ const navItems = [
   { label: "Map", icon: Map, href: "/" },
   { label: "Leads", icon: Activity, href: "/" },
   { label: "Dashboard", icon: BarChart3, href: "/dashboard" },
-  { label: "More", icon: Menu, href: "/feedback" },
+  { label: "More", icon: Menu, href: "/settings" },
 ];
 
 export function AppShell({

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { resolveDataMode } from "@/hooks/use-data-source";
 import { calculateTerritoryMetrics } from "@/lib/map/calculations";
 import { streetStatusColors, territoryColorByCompletion } from "@/lib/map/colors";
 import {
@@ -9,6 +10,7 @@ import {
 import { mockMapData } from "@/lib/map/mock-data";
 import { planEmployeeRoute } from "@/lib/map/route-planning";
 import type { LocalMapSnapshot, StreetLockState } from "@/lib/map/types";
+import { formatSupabaseError } from "@/lib/supabase/errors";
 
 describe("map pure logic", () => {
   it("calculates territory progress from completed trackable streets", () => {
@@ -96,5 +98,73 @@ describe("map pure logic", () => {
     expect(() => parseImportedSnapshot("{\"schemaVersion\":999}")).toThrow(
       "Backup schema version is not supported.",
     );
+  });
+
+  it("formats Supabase plain-object errors for cloud smoke tests", () => {
+    expect(
+      formatSupabaseError({
+        code: "42501",
+        details: "RLS check failed",
+        hint: "Check lead update policy",
+        message: "new row violates row-level security policy",
+      }),
+    ).toBe(
+      "new row violates row-level security policy | code: 42501 | details: RLS check failed | hint: Check lead update policy",
+    );
+  });
+
+  it("resolves data source mode from auth state and stored owner choice", () => {
+    expect(
+      resolveDataMode({
+        auth: { isConfigured: true, userId: null, profile: null },
+        canSwitchDataSource: false,
+        isEmployee: false,
+        storedMode: "cloud",
+      }),
+    ).toBe("demo");
+
+    expect(
+      resolveDataMode({
+        auth: {
+          isConfigured: true,
+          userId: "employee-1",
+          profile: {
+            id: "employee-1",
+            organization_id: "org-1",
+            full_name: "Employee",
+            email: "employee@example.com",
+            role: "employee",
+            active: true,
+            created_at: "2026-06-27T00:00:00.000Z",
+            updated_at: "2026-06-27T00:00:00.000Z",
+          },
+        },
+        canSwitchDataSource: false,
+        isEmployee: true,
+        storedMode: "demo",
+      }),
+    ).toBe("cloud");
+
+    expect(
+      resolveDataMode({
+        auth: {
+          isConfigured: true,
+          userId: "owner-1",
+          profile: {
+            id: "owner-1",
+            organization_id: "org-1",
+            full_name: "Owner",
+            email: "owner@example.com",
+            role: "owner",
+            active: true,
+            created_at: "2026-06-27T00:00:00.000Z",
+            updated_at: "2026-06-27T00:00:00.000Z",
+          },
+        },
+        canSwitchDataSource: true,
+        isEmployee: false,
+        storedMode: "demo",
+      }),
+    ).toBe("demo");
   });
 });

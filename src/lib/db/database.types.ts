@@ -99,6 +99,18 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      bootstrap_first_organization: {
+        Args: {
+          organization_name: string;
+          organization_slug: string;
+          owner_email: string;
+          owner_full_name: string | null;
+        };
+        Returns: {
+          organization_id: string;
+          profile_id: string;
+        }[];
+      };
       can_read_assigned_work: {
         Args: { target_organization_id: string; assigned_employee_id: string };
         Returns: boolean;
