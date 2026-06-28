@@ -1,0 +1,53 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f8fafc;
+  --foreground: #18181b;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+}
+
+html,
+body {
+  background: var(--background);
+  color: var(--foreground);
+  min-height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.leaflet-container {
+  background: #d7e3dc;
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.glasswell-lead-pin {
+  align-items: center;
+  background: transparent;
+  border-radius: 999px;
+  display: flex;
+  justify-content: center;
+}
+
+.glasswell-lead-pin span {
+  border: 3px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 8px 20px rgb(24 24 27 / 25%);
+  height: 22px;
+  width: 22px;
+}
